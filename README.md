@@ -195,6 +195,8 @@ keep a list of updated hosts, default `false`
 - `silent`: <boolean> - console.error errors, default `false`
 - `servers`: an array of objects `{host: <string>, port: <number>}` representing RethinkDB nodes to connect to
 - `optionalRun`: <boolean> - if `false`, yielding a query will not run it, default `true`
+- `retry`: `<boolean|object>` - retry queries the server didn't perform because a primary replica was
+unavailable, default off. See [Retrying during failover](#retrying-during-failover).
 RethinkDB to connect to.
 
 In case of a single instance, you can directly pass `host` and `port` in the top level parameters.
@@ -241,6 +243,38 @@ and not arrays by default.
 _Note_: The option `{stream: true}` that asynchronously returns a stream is deprecated. Use `toStream` instead.
 
 _Note_: The option `{optionalRun: false}` will disable the optional run for all instances of the driver.
+
+#### Retrying during failover
+
+When a server holding primary replicas stops, or a primary moves to another server, queries on the
+affected tables fail for a second or two with `ReqlOpFailedError` (for example `primary replica for
+shard ... not available` or `The primary replica is currently changing`). The server did not perform
+these queries, so they are safe to retry. With `retry`, the driver retries them with exponential backoff.
+
+```js
+// For every query run by this driver (and by thinky, which passes its config through)
+var r = require('rethinkdbdash')({servers: [...], retry: true});
+
+// Or per query, overriding the default
+r.table('users').get(id).run({retry: {attempts: 5}});
+r.table('users').get(id).run({retry: false});
+```
+
+`retry` is `true` (defaults below) or an object; per-query values are merged over the driver's:
+
+- `attempts` - maximum tries, including the first, default `10`
+- `minDelay` - first backoff in ms, doubled after each try, default `100`
+- `maxDelay` - longest single backoff in ms, default `2000`
+- `maxTime` - stop retrying once this many ms have passed, default `10000`
+- `indeterminate` - also retry errors where the query may already have run
+  (`ReqlOpIndeterminateError` "lost contact with primary replica", or the connection closing mid-query
+  when a server shuts down), default `false`. Turn it on only for idempotent queries: reads, `replace`,
+  or `insert` with a known `id` and `conflict: 'replace'`.
+- `onRetry` - `function(error, attempt, delayMs)`, called before each retry, e.g. for logging
+
+Other errors are never retried, and `noreply` queries are sent once. Changefeeds still abort with
+`Changefeed aborted (unavailable)` when their table's primary changes; reopen them in your code
+(the reopen itself is retried).
 
 #### Connection pool
 
