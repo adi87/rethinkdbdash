@@ -250,6 +250,8 @@ When a server holding primary replicas stops, or a primary moves to another serv
 affected tables fail for a second or two with `ReqlOpFailedError` (for example `primary replica for
 shard ... not available` or `The primary replica is currently changing`). The server did not perform
 these queries, so they are safe to retry. With `retry`, the driver retries them with exponential backoff.
+Other `ReqlOpFailedError`s that retrying can't fix, such as `Table ... does not exist` or
+`Index ... was not found`, fail straight away.
 
 ```js
 // For every query run by this driver (and by thinky, which passes its config through)
